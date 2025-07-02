@@ -2,6 +2,8 @@ import { jsPDF } from './pdfUtils';
 import { formatCurrency } from './calculations';
 import { getBankById } from './banks';
 import Chart from 'chart.js/auto';
+import { defaultExpenseCategories } from './categories';
+import { startOfYear, endOfYear, eachMonthOfInterval, format, startOfMonth, parseISO, isAfter, isSameMonth, endOfMonth } from 'date-fns';
 
 interface BankAccountData {
   bankName: string;
@@ -317,6 +319,30 @@ function ensureSpace(doc: any, y: number, neededSpace: number, logoImageBase64: 
   return y;
 }
 
+// Add a diagonal watermark to every page
+const addWatermark = (doc: any) => {
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    if (doc.saveGraphicsState) doc.saveGraphicsState();
+    if (doc.setGState) doc.setGState(new doc.GState({ opacity: 0.18 }));
+    doc.setTextColor(180, 180, 180);
+    doc.setFontSize(60);
+    doc.setFont('helvetica', 'bold');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    // Move watermark a bit down to visually center the diagonal text
+    const centerX = pageWidth / 2;
+    const centerY = pageHeight / 2 + pageHeight * 0.12; // shift down by 12% of page height
+    doc.text('ExpenseTracker', centerX, centerY, {
+      angle: 45,
+      align: 'center',
+      baseline: 'middle',
+    });
+    if (doc.restoreGraphicsState) doc.restoreGraphicsState();
+  }
+};
+
 // --- Main Export Function ---
 export const exportFinancialReport = async (
   user: UserData,
@@ -423,6 +449,10 @@ export const exportFinancialReport = async (
     y = ensureSpace(doc, y, 40, logoImageBase64);
     // Summary Block
     y = addSummaryBlock(doc, y, bankAccounts);
+
+    // Add watermark to every page before saving
+    addWatermark(doc);
+
     const fileName = `Financial_Report_${Date.now()}.pdf`;
     doc.save(fileName);
   } catch (error) {
@@ -478,3 +508,155 @@ export const generatePieChartImage = async (
   chart.destroy();
   return dataUrl;
 };
+
+// Utility to prepare all report data for exportFinancialReport
+export function prepareFinancialReportData({
+  bankAccounts,
+  incomes,
+  expenses,
+  selectedBankAccount,
+  selectedYear
+}: {
+  bankAccounts: any[],
+  incomes: any[],
+  expenses: any[],
+  selectedBankAccount: any,
+  selectedYear: number
+}) {
+  // Calculate per-bank account analysis
+  const bankAccountAnalysis = bankAccounts.map(account => {
+    // Get incomes and expenses for this specific account
+    const accountIncomes = incomes.filter(income => income.bankAccountId === account.id);
+    const accountExpenses = expenses.filter(expense => expense.bankAccountId === account.id);
+
+    // Use DB value for totalIncome only
+    const totalIncome = account.totalIncome;
+    const startingBalance = account.startingBalance;
+    const totalAvailable = totalIncome;
+    const currentBalance = totalIncome - account.totalExpense;
+    const monthlySavings = currentBalance;
+    const savingsRate = totalIncome > 0 ? (monthlySavings / totalIncome) * 100 : 0;
+
+    return {
+      account,
+      initialBalance: startingBalance,
+      totalIncome,
+      totalAvailable,
+      totalExpense: account.totalExpense,
+      currentBalance,
+      monthlySavings,
+      savingsRate,
+      transactionCount: accountIncomes.length + accountExpenses.length
+    };
+  });
+
+  // Generate monthly data for selected year and selected bank account
+  const yearStart = startOfYear(new Date(selectedYear, 0, 1));
+  const yearEnd = endOfYear(new Date(selectedYear, 0, 1));
+  const months = eachMonthOfInterval({ start: yearStart, end: yearEnd });
+  const currentDate = new Date();
+
+  const monthlyData = months.map(month => {
+    // Only show data for months not in the future
+    if (isAfter(month, endOfMonth(currentDate))) {
+      return {
+        month: format(month, 'MMM'),
+        income: 0,
+        expenses: 0,
+        savings: 0,
+        includesInitialBalance: false
+      };
+    }
+    
+    // Filter incomes and expenses for selected bank account and month
+    const monthIncomes = selectedBankAccount 
+      ? incomes.filter(income => 
+          income.bankAccountId === selectedBankAccount.id &&
+          isSameMonth(parseISO(income.date), month)
+        )
+      : [];
+    
+    const monthExpenses = selectedBankAccount 
+      ? expenses.filter(expense => 
+          expense.bankAccountId === selectedBankAccount.id &&
+          isSameMonth(parseISO(expense.date), month)
+        )
+      : [];
+    
+    const monthIncome = monthIncomes.reduce((sum, income) => sum + income.amount, 0);
+    const monthExpense = monthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    
+    let finalIncome = monthIncome;
+    let finalSavings = monthIncome - monthExpense;
+    let includesInitialBalance = false;
+    
+    // Add initial balance to the month when the account was created
+    if (selectedBankAccount) {
+      const accountCreationDate = parseISO(selectedBankAccount.createdAt);
+      const accountCreationMonth = startOfMonth(accountCreationDate);
+      
+      // If this month is the account creation month, add the initial balance
+      if (isSameMonth(month, accountCreationMonth)) {
+        includesInitialBalance = true;
+      }
+    }
+    
+    return {
+      month: format(month, 'MMM'),
+      income: finalIncome,
+      expenses: monthExpense,
+      savings: finalSavings,
+      includesInitialBalance
+    };
+  });
+
+  // Category-wise expense data for selected bank account
+  const categoryData = defaultExpenseCategories.map(category => {
+    const categoryExpenses = selectedBankAccount 
+      ? expenses
+          .filter(expense => 
+            expense.bankAccountId === selectedBankAccount.id &&
+            expense.category === category.id
+          )
+          .reduce((sum, expense) => sum + expense.amount, 0)
+      : 0;
+    
+    return {
+      name: category.name,
+      value: categoryExpenses,
+      color: category.color
+    };
+  }).filter(item => item.value > 0);
+
+  // Per-account category breakdowns
+  const accountCategoryBreakdowns = bankAccounts.map(account => {
+    const totalExpense = expenses
+      .filter(expense => expense.bankAccountId === account.id)
+      .reduce((sum, expense) => sum + expense.amount, 0);
+    const categoryData = defaultExpenseCategories.map(category => {
+      const categoryExpenses = expenses
+        .filter(expense => expense.bankAccountId === account.id && expense.category === category.id)
+        .reduce((sum, expense) => sum + expense.amount, 0);
+      const percentage = totalExpense > 0 ? (categoryExpenses / totalExpense) * 100 : 0;
+      return {
+        name: category.name,
+        value: categoryExpenses,
+        color: category.color,
+        percentage
+      };
+    }).filter(item => item.value > 0);
+    return {
+      bankAccountId: account.id,
+      bankName: account.bankName,
+      nickname: account.nickname,
+      categoryData
+    };
+  });
+
+  return {
+    bankAccountAnalysis,
+    monthlyData,
+    categoryData,
+    accountCategoryBreakdowns
+  };
+}
