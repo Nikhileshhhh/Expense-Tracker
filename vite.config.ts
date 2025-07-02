@@ -8,4 +8,14 @@ export default defineConfig({
     exclude: ['lucide-react'],
     include: ['jspdf', 'jspdf-autotable']
   },
+  build: {
+    outDir: 'dist'
+  },
+  server: {
+    host: true,
+    port: 5173
+  },
+  preview: {
+    port: 4173
+  }
 });
