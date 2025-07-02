@@ -353,7 +353,12 @@ export const exportFinancialReport = async (
   accountCategoryBreakdowns?: AccountCategoryBreakdown[],
 ) => {
   try {
-    const logoImageBase64 = await loadImageAsBase64('/src/assets/logo.png');
+    let logoImageBase64 = '';
+    try {
+      logoImageBase64 = await loadImageAsBase64('/logo.png'); // Use public directory
+    } catch (e) {
+      console.warn('Logo image could not be loaded for PDF, continuing without logo.');
+    }
     const doc = new jsPDF();
     addLogoToPage(doc, logoImageBase64); // First page
 
