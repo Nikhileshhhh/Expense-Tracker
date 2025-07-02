@@ -54,7 +54,11 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
       console.error('Google sign-in error:', error);
-      setError(error.message || 'Failed to sign in with Google. Please try again.');
+      if (error.code === 'auth/popup-closed-by-user') {
+        setError('Google sign-in was cancelled. If you wish to continue, please try again.');
+      } else {
+        setError(error.message || 'Failed to sign in with Google. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }

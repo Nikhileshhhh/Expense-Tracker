@@ -43,7 +43,11 @@ const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
     } catch (err: any) {
-      setError(`❌ ${err.message}`);
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('Google sign-up was cancelled. If you wish to continue, please try again.');
+      } else {
+        setError(`❌ ${err.message}`);
+      }
     } finally {
       setIsLoading(false);
     }
