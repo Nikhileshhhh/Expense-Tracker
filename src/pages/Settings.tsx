@@ -7,12 +7,12 @@ import { useData } from '../contexts/DataContext';
 import { useBillReminders } from '../contexts/BillReminderContext';
 import { useTheme, themes, Theme } from '../contexts/ThemeContext';
 import { auth, db } from '../firebase';
-import { exportFinancialReport } from '../utils/exportFinancialReport';
+import { exportFinancialReport, prepareFinancialReportData } from '../utils/exportFinancialReport';
 import type { MonthlyData, CategoryData } from '../utils/exportFinancialReport';
 
 const Settings: React.FC = () => {
   const { user, logout, isLoading, refreshUser, updateUserDocument, readUserDocument, setUser, isGoogleUser, isEmailPasswordUser } = useAuth();
-  const { incomes, expenses, budgets, savingsGoals, budgetProgress, bankAccounts, deleteBankAccount } = useData();
+  const { incomes, expenses, budgets, savingsGoals, budgetProgress, bankAccounts, deleteBankAccount, selectedBankAccount } = useData();
   const { reminders, addReminder, deleteReminder, markAsPaid, getDueReminders } = useBillReminders();
   const { currentTheme, setTheme, themeConfig } = useTheme();
   const [activeTab, setActiveTab] = useState('profile');
@@ -79,39 +79,33 @@ const Settings: React.FC = () => {
     linkElement.click();
   };
 
-  const downloadPDFReport = () => {
+  const downloadPDFReport = async () => {
     if (!user) {
       alert('Please log in to download the report.');
       return;
     }
-    // Prepare bank account data for PDF
-    // (You may want to reuse the same logic as in Reports.tsx for consistency)
-    // For now, just use all bank accounts and all data
-    const pdfBankAccounts = bankAccounts.map(account => {
-      // Calculate true total income (including starting balance)
-      const trueTotalIncome = account.totalIncome + account.startingBalance;
-      const currentBalance = trueTotalIncome - account.totalExpense;
-      const monthlySavings = currentBalance;
-      const savingsRate = trueTotalIncome > 0 ? (monthlySavings / trueTotalIncome) * 100 : 0;
-      return {
-        bankName: account.bankName,
-        nickname: account.nickname,
-        startingBalance: account.startingBalance,
-        totalIncome: trueTotalIncome,
-        totalExpense: account.totalExpense,
-        currentBalance,
-        createdAt: account.createdAt,
-        monthlySavings,
-        savingsRate,
-        transactionCount: (incomes.filter(i => i.bankAccountId === account.id).length + expenses.filter(e => e.bankAccountId === account.id).length)
-      };
+    // Use the shared utility to prepare report data just like Reports page, passing selectedBankAccount
+    const { bankAccountAnalysis, monthlyData, categoryData, accountCategoryBreakdowns } = prepareFinancialReportData({
+      bankAccounts,
+      incomes,
+      expenses,
+      selectedBankAccount,
+      selectedYear: new Date().getFullYear()
     });
-    // Generate monthly data for the current year and all accounts (simplified)
-    // You may want to use the same logic as in Reports.tsx for more accuracy
-    const monthlyData: MonthlyData[] = [];
-    // For category breakdown, you may want to aggregate expenses by category
-    const categoryData: CategoryData[] = [];
-    exportFinancialReport(
+    // Prepare the data for exportFinancialReport
+    const pdfBankAccounts = bankAccountAnalysis.map(analysis => ({
+      bankName: analysis.account.bankName,
+      nickname: analysis.account.nickname,
+      startingBalance: analysis.initialBalance,
+      totalIncome: analysis.totalIncome,
+      totalExpense: analysis.totalExpense,
+      currentBalance: analysis.currentBalance,
+      createdAt: analysis.account.createdAt,
+      monthlySavings: analysis.monthlySavings,
+      savingsRate: analysis.savingsRate,
+      transactionCount: analysis.transactionCount
+    }));
+    await exportFinancialReport(
       {
         displayName: user.displayName || undefined,
         email: user.email || ''
@@ -119,7 +113,8 @@ const Settings: React.FC = () => {
       pdfBankAccounts,
       monthlyData,
       new Date().getFullYear(),
-      categoryData
+      undefined, // categoryData (already handled per-account)
+      accountCategoryBreakdowns
     );
   };
 
