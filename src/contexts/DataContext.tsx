@@ -5,13 +5,14 @@ import {
 import { useAuth } from './AuthContext';
 import {
   getIncomes, saveIncome as saveIncomeToStorage, deleteIncome as deleteIncomeFromStorage,
-  getExpenses, saveExpense as saveExpenseToStorage, deleteExpense as deleteExpenseFromStorage,
   getBudgets, saveBudget as saveBudgetToStorage, deleteBudget as deleteBudgetFromStorage,
   getSavingsGoals, saveSavingsGoal as saveSavingsGoalToStorage, deleteSavingsGoal as deleteSavingsGoalFromStorage,
   getBankAccounts, saveBankAccount as saveBankAccountToStorage, deleteBankAccount as deleteBankAccountFromStorage,
   updateBankAccountBalance, generateId
 } from '../utils/storage';
 import { calculateBudgetProgress } from '../utils/calculations';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface DataContextType {
   bankAccounts: BankAccount[];
@@ -98,6 +99,10 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
   const [budgetProgress, setBudgetProgress] = useState<Record<string, number>>({}); // ADDED
+  const [loading, setLoading] = useState(true);
+  const [totalIncome, setTotalIncome] = useState(0);
+  const [totalExpense, setTotalExpense] = useState(0);
+  const [monthlySavings, setMonthlySavings] = useState(0);
 
   const refreshData = async () => {
     if (user) {
@@ -111,7 +116,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
         const currentAccountId = selectedBankAccount?.id;
         setIncomes(getIncomes(user.uid, currentAccountId));
-        setExpenses(getExpenses(user.uid, currentAccountId));
+        // setExpenses(getExpenses(user.uid, currentAccountId));
         setBudgets(getBudgets(user.uid, currentAccountId));
         
         // Load goals and clean up duplicates
@@ -151,7 +156,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       if (user) {
         const currentAccountId = selectedBankAccount.id;
         setIncomes(getIncomes(user.uid, currentAccountId));
-        setExpenses(getExpenses(user.uid, currentAccountId));
+        // setExpenses(getExpenses(user.uid, currentAccountId));
         setBudgets(getBudgets(user.uid, currentAccountId));
         
         // Load goals and clean up duplicates
@@ -163,6 +168,44 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       updateAllAutoTrackedSavings();
     }
   }, [selectedBankAccount]); // Handle bank account changes separately
+
+  useEffect(() => {
+    if (!user || !selectedBankAccount) return;
+    setLoading(true);
+    // Expenses listener
+    const expensesRef = collection(db, 'users', user.uid, 'bankAccounts', selectedBankAccount.id, 'expenses');
+    const unsubscribeExpenses = onSnapshot(expensesRef, (snapshot) => {
+      const expenseList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Expense[];
+      setExpenses(expenseList);
+      const total = expenseList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+      setTotalExpense(total);
+      setLoading(false);
+    });
+    // Incomes listener
+    const incomesRef = collection(db, 'users', user.uid, 'bankAccounts', selectedBankAccount.id, 'incomes');
+    const unsubscribeIncomes = onSnapshot(incomesRef, (snapshot) => {
+      const incomeList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Income[];
+      setIncomes(incomeList);
+      const total = incomeList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+      setTotalIncome(total);
+      setLoading(false);
+    });
+    return () => {
+      unsubscribeExpenses();
+      unsubscribeIncomes();
+    };
+  }, [user, selectedBankAccount]);
+
+  // Monthly savings calculation
+  useEffect(() => {
+    setMonthlySavings(totalIncome - totalExpense);
+  }, [totalIncome, totalExpense]);
 
   // Bank Account operations
   const addBankAccount = async (accountData: Omit<BankAccount, 'id' | 'userId' | 'createdAt' | 'totalIncome' | 'totalExpense'>) => {
@@ -321,7 +364,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       id: generateId(),
       userId: user.uid
     };
-    saveExpenseToStorage(expense);
+    // saveExpenseToStorage(expense); // Now handled by Firestore
     setExpenses(prev => {
       const updated = [...prev, expense];
       recalculateAndUpdateTotalsWithArray(expense.bankAccountId, incomes, updated);
@@ -331,7 +374,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
   const updateExpense = async (expense: Expense) => {
     const oldExpense = expenses.find(e => e.id === expense.id);
-    saveExpenseToStorage(expense);
+    // saveExpenseToStorage(expense); // Now handled by Firestore
     setExpenses(prev => {
       const updated = prev.map(e => e.id === expense.id ? expense : e);
       recalculateAndUpdateTotalsWithArray(expense.bankAccountId, incomes, updated);
@@ -341,7 +384,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
   const deleteExpense = async (expenseId: string) => {
     const expense = expenses.find(e => e.id === expenseId);
-    deleteExpenseFromStorage(expenseId);
+    // deleteExpenseFromStorage(expenseId); // Now handled by Firestore
     setExpenses(prev => {
       const updated = prev.filter(e => e.id !== expenseId);
       if (expense) {
