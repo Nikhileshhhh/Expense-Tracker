@@ -106,8 +106,9 @@ export const getBudgets = (userId: string, bankAccountId?: string): Budget[] => 
   let filteredBudgets = budgets.filter((budget: Budget) => budget.userId === userId);
   
   if (bankAccountId) {
+    // Only show budgets for the specific bank account (no global fallback)
     filteredBudgets = filteredBudgets.filter((budget: Budget) => 
-      budget.bankAccountId === bankAccountId || !budget.bankAccountId
+      budget.bankAccountId === bankAccountId
     );
   }
   
@@ -136,15 +137,8 @@ export const deleteBudget = (budgetId: string): void => {
 // Savings goals operations
 export const getSavingsGoals = (userId: string, bankAccountId?: string): SavingsGoal[] => {
   const goals = JSON.parse(localStorage.getItem(SAVINGS_GOALS_KEY) || '[]');
-  let filteredGoals = goals.filter((goal: SavingsGoal) => goal.userId === userId);
-  
-  if (bankAccountId) {
-    filteredGoals = filteredGoals.filter((goal: SavingsGoal) => 
-      goal.bankAccountId === bankAccountId || !goal.bankAccountId
-    );
-  }
-  
-  return filteredGoals;
+  // Goals are global - return all goals for the user
+  return goals.filter((goal: SavingsGoal) => goal.userId === userId);
 };
 
 export const saveSavingsGoal = (goal: SavingsGoal): void => {

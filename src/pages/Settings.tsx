@@ -6,15 +6,17 @@ import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { useBillReminders } from '../contexts/BillReminderContext';
 import { useTheme, themes, Theme } from '../contexts/ThemeContext';
+import { useToast } from '../contexts/ToastContext';
 import { auth, db } from '../firebase';
 import { exportFinancialReport, prepareFinancialReportData } from '../utils/exportFinancialReport';
 import type { MonthlyData, CategoryData } from '../utils/exportFinancialReport';
 
 const Settings: React.FC = () => {
   const { user, logout, isLoading, refreshUser, updateUserDocument, readUserDocument, setUser, isGoogleUser, isEmailPasswordUser } = useAuth();
-  const { incomes, expenses, budgets, savingsGoals, budgetProgress, bankAccounts, deleteBankAccount, selectedBankAccount } = useData();
+  const { incomes, expenses, budgets, savingsGoals, budgetProgress, bankAccounts, deleteBankAccount, selectedBankAccount, getBudgetNotifications } = useData();
   const { reminders, addReminder, deleteReminder, markAsPaid, getDueReminders } = useBillReminders();
   const { currentTheme, setTheme, themeConfig } = useTheme();
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('profile');
   const [profileData, setProfileData] = useState({
     name: user?.displayName || '',
@@ -47,9 +49,8 @@ const Settings: React.FC = () => {
   // Get due reminders for notifications
   const dueReminders = getDueReminders();
 
-  // Budget notifications
-  const overBudget = budgets.filter(b => (budgetProgress[b.id] ?? 0) >= 100);
-  const alertBudgets = budgets.filter(b => (budgetProgress[b.id] ?? 0) >= b.alertThreshold && (budgetProgress[b.id] ?? 0) < 100);
+  // Budget notifications with bank account information
+  const { overBudget: overBudgetData, alertBudgets: alertBudgetsData } = getBudgetNotifications();
 
   // Goal notifications
   const overdueGoals = savingsGoals.filter(g => {
@@ -58,7 +59,7 @@ const Settings: React.FC = () => {
     return daysLeft < 0 && !achieved;
   });
 
-  const totalNotifications = dueReminders.length + overBudget.length + alertBudgets.length + overdueGoals.length;
+  const totalNotifications = dueReminders.length + overBudgetData.length + alertBudgetsData.length + overdueGoals.length;
 
   const exportData = () => {
     const data = {
@@ -81,31 +82,33 @@ const Settings: React.FC = () => {
 
   const downloadPDFReport = async () => {
     if (!user) {
-      alert('Please log in to download the report.');
+      showToast('Please log in to download the report.', 'error');
       return;
     }
-    // Use the shared utility to prepare report data just like Reports page, passing selectedBankAccount
-    const { bankAccountAnalysis, monthlyData, categoryData, accountCategoryBreakdowns } = prepareFinancialReportData({
-      bankAccounts,
-      incomes,
-      expenses,
-      selectedBankAccount,
-      selectedYear: new Date().getFullYear()
-    });
-    // Prepare the data for exportFinancialReport
-    const pdfBankAccounts = bankAccountAnalysis.map(analysis => ({
-      bankName: analysis.account.bankName,
-      nickname: analysis.account.nickname,
-      startingBalance: analysis.initialBalance,
-      totalIncome: analysis.totalIncome,
-      totalExpense: analysis.totalExpense,
-      currentBalance: analysis.currentBalance,
-      createdAt: analysis.account.createdAt,
-      monthlySavings: analysis.monthlySavings,
-      savingsRate: analysis.savingsRate,
-      transactionCount: analysis.transactionCount
-    }));
-    await exportFinancialReport(
+    
+    try {
+      // Use the shared utility to prepare report data just like Reports page, passing selectedBankAccount
+      const { bankAccountAnalysis, monthlyData, categoryData, accountCategoryBreakdowns } = prepareFinancialReportData({
+        bankAccounts,
+        incomes,
+        expenses,
+        selectedBankAccount,
+        selectedYear: new Date().getFullYear()
+      });
+      // Prepare the data for exportFinancialReport
+      const pdfBankAccounts = bankAccountAnalysis.map(analysis => ({
+        bankName: analysis.account.bankName,
+        nickname: analysis.account.nickname,
+        startingBalance: analysis.initialBalance,
+        totalIncome: analysis.totalIncome,
+        totalExpense: analysis.totalExpense,
+        currentBalance: analysis.currentBalance,
+        createdAt: analysis.account.createdAt,
+        monthlySavings: analysis.monthlySavings,
+        savingsRate: analysis.savingsRate,
+        transactionCount: analysis.transactionCount
+      }));
+          await exportFinancialReport(
       {
         displayName: user.displayName || undefined,
         email: user.email || ''
@@ -114,8 +117,17 @@ const Settings: React.FC = () => {
       monthlyData,
       new Date().getFullYear(),
       undefined, // categoryData (already handled per-account)
-      accountCategoryBreakdowns
+      accountCategoryBreakdowns,
+      budgets,
+      savingsGoals,
+      expenses
     );
+      
+      // Show success toast for all users
+      showToast('PDF report downloaded successfully!', 'success');
+    } catch (error) {
+      showToast('Failed to download PDF report. Please try again.', 'error');
+    }
   };
 
   const clearAllData = async () => {
@@ -243,11 +255,14 @@ const Settings: React.FC = () => {
     }
 
     addReminder({
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       userId: user.uid,
       billName: billForm.billName,
       dueDate: billForm.dueDate,
       reminderTime: billForm.reminderTime as 'same-day' | '1-day-before' | '3-days-before',
-      notes: billForm.notes
+      notes: billForm.notes,
+      isPaid: false,
+      createdAt: new Date().toISOString()
     });
 
     setBillForm({
@@ -411,11 +426,10 @@ const Settings: React.FC = () => {
                     </span>
                   )}
                 </div>
-                
                 {/* Bill Reminders */}
                 <div className="space-y-4">
                   <div className="flex items-center mb-3 text-red-400 font-semibold">
-                    <Bell className="h-5 w-5 mr-2" /> 
+                    <Bell className="h-5 w-5 mr-2" />
                     Bill Reminders ({dueReminders.length})
                   </div>
                   {dueReminders.length === 0 ? (
@@ -431,64 +445,50 @@ const Settings: React.FC = () => {
                             <p className={`text-xs ${currentTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Due: {rem.dueDate}</p>
                             {rem.notes && <p className={`text-xs ${currentTheme === 'dark' ? 'text-gray-500' : 'text-gray-500'} italic`}>{rem.notes}</p>}
                           </div>
-                          <div className="flex flex-col space-y-2 ml-4">
-                            <button 
-                              onClick={() => markAsPaid(rem.id)} 
-                              className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs transition-colors"
-                            >
-                              Mark as Paid
-                            </button>
-                            <button 
-                              onClick={() => deleteReminder(rem.id)} 
-                              className="bg-gray-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs transition-colors"
-                            >
-                              Delete
-                            </button>
-                          </div>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-
                 {/* Budget Alerts */}
                 <div className="space-y-4">
                   <div className="flex items-center mb-3 text-yellow-400 font-semibold">
-                    <AlertTriangle className="h-5 w-5 mr-2" /> 
-                    Budget Alerts ({overBudget.length + alertBudgets.length})
+                    <AlertTriangle className="h-5 w-5 mr-2" />
+                    Budget Alerts ({overBudgetData.length + alertBudgetsData.length})
                   </div>
-                  {overBudget.length === 0 && alertBudgets.length === 0 ? (
+                  {overBudgetData.length === 0 && alertBudgetsData.length === 0 ? (
                     <div className={`p-4 rounded-lg border ${currentTheme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-300'}`}>
                       <p className={`text-sm ${currentTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>No budget alerts.</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {overBudget.map(b => (
-                        <div key={b.id} className={`flex items-center justify-between p-4 rounded-lg border ${currentTheme === 'dark' ? 'bg-red-900 border-red-700' : 'bg-red-50 border-red-300'}`}>
-                          <div className="flex items-center">
+                      {overBudgetData.map(({ budget, bankAccount, progress }) => (
+                        <div key={budget.id} className={`flex items-center justify-between p-4 rounded-lg border ${currentTheme === 'dark' ? 'bg-red-900 border-red-700' : 'bg-red-50 border-red-300'}`}>
+                          <div>
                             <Target className="h-4 w-4 text-red-400 mr-2" />
-                            <span className={`text-sm font-medium ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>{b.category}</span>
+                            <span className={`text-sm font-medium ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>{budget.category}</span>
+                            <span className="ml-2 text-xs text-gray-500">({bankAccount.bankName}{bankAccount.nickname && bankAccount.nickname !== bankAccount.bankName ? `, ${bankAccount.nickname}` : ''})</span>
                           </div>
-                          <span className="text-red-400 text-xs font-bold">Over Budget! ({(budgetProgress[b.id] ?? 0).toFixed(0)}%)</span>
+                          <span className="text-red-400 text-xs font-bold">Over Budget! ({progress.toFixed(0)}%)</span>
                         </div>
                       ))}
-                      {alertBudgets.map(b => (
-                        <div key={b.id} className={`flex items-center justify-between p-4 rounded-lg border ${currentTheme === 'dark' ? 'bg-yellow-900 border-yellow-700' : 'bg-yellow-50 border-yellow-300'}`}>
-                          <div className="flex items-center">
+                      {alertBudgetsData.map(({ budget, bankAccount, progress }) => (
+                        <div key={budget.id} className={`flex items-center justify-between p-4 rounded-lg border ${currentTheme === 'dark' ? 'bg-yellow-900 border-yellow-700' : 'bg-yellow-50 border-yellow-300'}`}>
+                          <div>
                             <Target className="h-4 w-4 text-yellow-400 mr-2" />
-                            <span className={`text-sm font-medium ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>{b.category}</span>
+                            <span className={`text-sm font-medium ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>{budget.category}</span>
+                            <span className="ml-2 text-xs text-gray-500">({bankAccount.bankName}{bankAccount.nickname && bankAccount.nickname !== bankAccount.bankName ? `, ${bankAccount.nickname}` : ''})</span>
                           </div>
-                          <span className="text-yellow-400 text-xs font-bold">{(budgetProgress[b.id] ?? 0).toFixed(0)}% used</span>
+                          <span className="text-yellow-400 text-xs font-bold">{progress.toFixed(0)}% used</span>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-
                 {/* Goal Deadlines */}
                 <div className="space-y-4">
                   <div className="flex items-center mb-3 text-blue-400 font-semibold">
-                    <TrendingUp className="h-5 w-5 mr-2" /> 
+                    <TrendingUp className="h-5 w-5 mr-2" />
                     Goal Deadlines ({overdueGoals.length})
                   </div>
                   {overdueGoals.length === 0 ? (
@@ -511,76 +511,6 @@ const Settings: React.FC = () => {
                       })}
                     </div>
                   )}
-                </div>
-
-                {/* Notification Preferences */}
-                <div className="space-y-4 pt-6 border-t border-gray-700">
-                  <h3 className={`text-lg font-semibold ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>Notification Preferences</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-gray-600">
-                      <div>
-                        <p className={`font-medium ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>Budget Alerts</p>
-                        <p className={`text-sm ${currentTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Get notified when you're approaching or exceeding budget limits</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={notifications.budgetAlerts}
-                          onChange={(e) => setNotifications({ ...notifications, budgetAlerts: e.target.checked })}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
-                      </label>
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-gray-600">
-                      <div>
-                        <p className={`font-medium ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>Bill Reminders</p>
-                        <p className={`text-sm ${currentTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Receive notifications for upcoming bill payments</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={notifications.billReminders}
-                          onChange={(e) => setNotifications({ ...notifications, billReminders: e.target.checked })}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
-                      </label>
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-gray-600">
-                      <div>
-                        <p className={`font-medium ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>Goal Deadlines</p>
-                        <p className={`text-sm ${currentTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Get reminded about savings goal deadlines</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={notifications.goalDeadlines}
-                          onChange={(e) => setNotifications({ ...notifications, goalDeadlines: e.target.checked })}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
-                      </label>
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-gray-600">
-                      <div>
-                        <p className={`font-medium ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>Monthly Reports</p>
-                        <p className={`text-sm ${currentTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Receive monthly financial summary reports</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={notifications.monthlyReports}
-                          onChange={(e) => setNotifications({ ...notifications, monthlyReports: e.target.checked })}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
-                      </label>
-                    </div>
-                  </div>
                 </div>
               </div>
             )}

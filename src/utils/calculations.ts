@@ -90,12 +90,14 @@ export const calculateFinancialSummary = (
   incomes: Income[], 
   expenses: Expense[], 
   budgets: Budget[],
+  startingBalance: number = 0,
   date: Date = new Date()
 ): FinancialSummary => {
   const totalIncome = calculateMonthlyIncome(incomes, date);
   const totalExpenses = calculateMonthlyExpenses(expenses, date);
-  const savings = totalIncome - totalExpenses;
-  const savingsRate = totalIncome > 0 ? (savings / totalIncome) * 100 : 0;
+  const effectiveIncome = totalIncome > 0 ? totalIncome : startingBalance;
+  const savings = effectiveIncome - totalExpenses;
+  const savingsRate = effectiveIncome > 0 ? (savings / effectiveIncome) * 100 : 0;
   
   const monthlyBudget = budgets
     .filter(budget => budget.period === 'monthly')
@@ -124,11 +126,12 @@ export const calculateFinancialSummaryWithAccount = (
   selectedAccount: BankAccount | null,
   date: Date = new Date()
 ): FinancialSummary => {
-  // Use the DB value for totalIncome, which already includes startingBalance
   const totalIncome = selectedAccount ? selectedAccount.totalIncome : 0;
   const totalExpenses = calculateMonthlyExpenses(expenses, date);
-  const savings = totalIncome - totalExpenses;
-  const savingsRate = totalIncome > 0 ? (savings / totalIncome) * 100 : 0;
+  const startingBalance = selectedAccount ? selectedAccount.startingBalance : 0;
+  const effectiveIncome = totalIncome > 0 ? totalIncome : startingBalance;
+  const savings = effectiveIncome - totalExpenses;
+  const savingsRate = effectiveIncome > 0 ? (savings / effectiveIncome) * 100 : 0;
 
   const monthlyBudget = budgets
     .filter(budget => budget.period === 'monthly')
@@ -157,8 +160,13 @@ export const formatCurrency = (value: number): string => {
   })}`;
 };
 
-export const calculateBudgetProgress = (expenses: Expense[], budget: Budget, date: Date = new Date()): number => {
-  const categoryExpenses = calculateCategoryExpenses(expenses, budget.category, date);
+export const calculateBudgetProgress = (expenses: Expense[], budget: Budget, date: Date = new Date(), bankAccountId?: string): number => {
+  // Filter expenses by bank account if specified
+  const filteredExpenses = bankAccountId 
+    ? expenses.filter(expense => expense.bankAccountId === bankAccountId)
+    : expenses;
+  
+  const categoryExpenses = calculateCategoryExpenses(filteredExpenses, budget.category, date);
   return budget.budgetAmount > 0 ? (categoryExpenses / budget.budgetAmount) * 100 : 0;
 };
 

@@ -53,11 +53,14 @@ const UpcomingBills: React.FC = () => {
     }
 
     addReminder({
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       userId: user.uid,
       billName: billForm.billName,
       dueDate: billForm.dueDate,
       reminderTime: billForm.reminderTime as 'same-day' | '1-day-before' | '3-days-before',
-      notes: billForm.notes
+      notes: billForm.notes,
+      isPaid: false,
+      createdAt: new Date().toISOString()
     });
 
     setBillForm({ billName: '', dueDate: '', reminderTime: '1-day-before', notes: '' });

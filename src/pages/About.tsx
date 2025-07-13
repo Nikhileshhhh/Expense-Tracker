@@ -63,8 +63,8 @@ const About: React.FC = () => {
     },
     {
       icon: <Shield className="h-6 w-6" />,
-      title: "Google Sign-In",
-      description: "To make signing up effortless and secure, we have integrated Google Sign-In. You can quickly log in or register using your Gmail account with just a click, without the need to remember another password. Benefits include one-tap secure authentication, trusted by millions worldwide, reduces password fatigue, and provides fast and seamless login experience."
+      title: "🔐 Secure & Seamless User Authentication",
+      description: "We've designed our app to make signing up and logging in as smooth as possible. You can choose to sign in using: Google Sign-In – Instantly access your account with your Gmail. Just one click, no extra passwords. Email & Password – Prefer the classic way? You can sign up or log in securely with your email credentials. Behind the scenes, we use Firebase Authentication to manage all user accounts, ensuring strong security and reliability. Your user data is safely stored in Cloud Firestore, which means your preferences, accounts, and activity are synced across all your devices in real-time. Whether you're tracking your finances from your laptop or phone, your data stays consistent, secure, and always up to date."
     }
   ];
 

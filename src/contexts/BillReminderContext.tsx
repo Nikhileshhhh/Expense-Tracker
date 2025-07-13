@@ -1,16 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { BillReminder } from '../types';
 import { useAuth } from './AuthContext';
+import { db } from '../firebase';
+import { collection, query, onSnapshot, setDoc, doc, deleteDoc } from 'firebase/firestore';
 
 interface BillReminderContextType {
   reminders: BillReminder[];
-  addReminder: (reminder: Omit<BillReminder, 'id' | 'createdAt' | 'isPaid'>) => void;
+  addReminder: (reminder: BillReminder) => void;
   deleteReminder: (id: string) => void;
   markAsPaid: (id: string) => void;
   getDueReminders: () => BillReminder[];
 }
 
-const BillReminderContext = createContext<BillReminderContextType | undefined>(undefined);
+export const BillReminderContext = createContext<BillReminderContextType | undefined>(undefined);
 
 export const useBillReminders = () => {
   const context = useContext(BillReminderContext);
@@ -18,74 +20,36 @@ export const useBillReminders = () => {
   return context;
 };
 
-const BILL_REMINDERS_KEY = 'BILL_REMINDERS';
-
-export const BillReminderProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { user, isLoading } = useAuth();
-  const [allReminders, setAllReminders] = useState<BillReminder[]>([]);
+export const BillReminderProvider = ({ children }: { children: React.ReactNode }) => {
+  const { user } = useAuth();
   const [reminders, setReminders] = useState<BillReminder[]>([]);
-  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load from localStorage only once on mount
   useEffect(() => {
-    if (!isInitialized) {
-      try {
-        const stored = localStorage.getItem(BILL_REMINDERS_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed)) {
-            setAllReminders(parsed);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading bill reminders from localStorage:', error);
-        setAllReminders([]);
-      }
-      setIsInitialized(true);
-    }
-  }, [isInitialized]);
+    if (!user) return;
+    const q = query(collection(db, 'users', user.uid, 'billReminders'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data: BillReminder[] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BillReminder));
+      setReminders(data);
+    });
+    return () => unsubscribe();
+  }, [user]);
 
-  // Filter by user only after user data is loaded and not loading
-  useEffect(() => {
-    if (!isLoading && isInitialized) {
-      if (user && user.uid) {
-        const filtered = allReminders.filter(r => r.userId === user.uid);
-        setReminders(filtered);
-      } else {
-        setReminders([]);
-      }
-    }
-  }, [user, allReminders, isLoading, isInitialized]);
-
-  // Save to localStorage when all reminders change
-  useEffect(() => {
-    if (isInitialized) {
-      try {
-        localStorage.setItem(BILL_REMINDERS_KEY, JSON.stringify(allReminders));
-      } catch (error) {
-        console.error('Error saving bill reminders to localStorage:', error);
-      }
-    }
-  }, [allReminders, isInitialized]);
-
-  const addReminder = (reminder: Omit<BillReminder, 'id' | 'createdAt' | 'isPaid'>) => {
-    const newReminder: BillReminder = {
-      ...reminder,
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      createdAt: new Date().toISOString(),
-      isPaid: false
-    };
-    setAllReminders(prev => [...prev, newReminder]);
+  const addReminder = async (reminder: BillReminder) => {
+    if (!user) return;
+    const ref = doc(db, 'users', user.uid, 'billReminders', reminder.id);
+    await setDoc(ref, reminder);
   };
 
-  const deleteReminder = (id: string) => {
-    setAllReminders(prev => prev.filter(r => r.id !== id));
+  const deleteReminder = async (id: string) => {
+    if (!user) return;
+    const ref = doc(db, 'users', user.uid, 'billReminders', id);
+    await deleteDoc(ref);
   };
 
-  const markAsPaid = (id: string) => {
-    setAllReminders(prev =>
-      prev.map(r => r.id === id ? { ...r, isPaid: true } : r)
-    );
+  const markAsPaid = async (id: string) => {
+    if (!user) return;
+    const ref = doc(db, 'users', user.uid, 'billReminders', id);
+    await setDoc(ref, { isPaid: true }, { merge: true });
   };
 
   const getDueReminders = (): BillReminder[] => {
@@ -94,7 +58,7 @@ export const BillReminderProvider: React.FC<{ children: ReactNode }> = ({ childr
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return allReminders.filter(r => {
+    return reminders.filter(r => {
       if (r.userId !== user.uid || r.isPaid) return false;
 
       const due = new Date(r.dueDate);
@@ -111,13 +75,7 @@ export const BillReminderProvider: React.FC<{ children: ReactNode }> = ({ childr
   };
 
   return (
-    <BillReminderContext.Provider value={{
-      reminders,
-      addReminder,
-      deleteReminder,
-      markAsPaid,
-      getDueReminders
-    }}>
+    <BillReminderContext.Provider value={{ reminders, addReminder, deleteReminder, markAsPaid, getDueReminders }}>
       {children}
     </BillReminderContext.Provider>
   );

@@ -8,7 +8,7 @@ import { Budget, Expense, SavingsGoal } from '../types';
 
 const Goals: React.FC = () => {
   const { savingsGoals, incomes, expenses, addSavingsGoal, updateSavingsGoal, deleteSavingsGoal, selectedBankAccount } = useData();
-  const { currentMonthlySavings } = useAutoTrackSavingsGoal();
+  const { currentMonthlySavings, updateAllSavings } = useAutoTrackSavingsGoal();
   const { themeConfig, currentTheme } = useTheme();
   const [showForm, setShowForm] = useState(false);
   const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
@@ -21,7 +21,7 @@ const Goals: React.FC = () => {
   });
   const [formError, setFormError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
     
@@ -54,18 +54,23 @@ const Goals: React.FC = () => {
 
     const goalData = {
       title: formData.title,
-      targetAmount: roundedTargetAmount,
-      currentAmount: roundedCurrentAmount,
+      targetAmount: Math.round(roundedTargetAmount * 100) / 100, // Ensure exact 2 decimal places
+      currentAmount: Math.round(roundedCurrentAmount * 100) / 100, // Ensure exact 2 decimal places
       targetDate: formData.targetDate,
       description: formData.description
     };
 
+    console.log('🎯 Submitting goal data:', goalData);
+    
     if (editingGoal) {
-      updateSavingsGoal({ ...editingGoal, ...goalData });
+      console.log('🎯 Updating existing goal');
+      await updateSavingsGoal({ ...editingGoal, ...goalData });
     } else {
-      addSavingsGoal(goalData);
+      console.log('🎯 Creating new goal');
+      await addSavingsGoal(goalData);
     }
 
+    console.log('🎯 Goal operation completed, resetting form');
     resetForm();
   };
 
@@ -128,15 +133,33 @@ const Goals: React.FC = () => {
         <div>
           <h1 className={`text-3xl font-bold ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>Savings Goals</h1>
           <p className={`${currentTheme === 'dark' ? 'text-gray-300' : 'text-gray-600'} mt-1`}>Set targets and track your savings progress automatically</p>
+          {selectedBankAccount && (
+            <p className={`text-sm ${currentTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'} mt-1`}>
+              Bank Account: {selectedBankAccount.nickname || selectedBankAccount.bankName}
+            </p>
+          )}
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg flex items-center space-x-2 transition-colors duration-200 font-medium"
-        >
-          <Plus className="h-5 w-5" />
-          <span>Add Goal</span>
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={() => setShowForm(true)}
+            className="px-6 py-3 rounded-lg flex items-center space-x-2 transition-colors duration-200 font-medium bg-red-600 hover:bg-red-700 text-white"
+          >
+            <Plus className="h-5 w-5" />
+            <span>Add Goal</span>
+          </button>
+        </div>
       </div>
+
+      {selectedBankAccount && (
+        <div className="bg-blue-900 border border-blue-700 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <Target className="h-5 w-5 text-blue-400" />
+            <p className="text-blue-200">
+              Goals are global and apply to all your bank accounts. Your current monthly savings from {selectedBankAccount.nickname || selectedBankAccount.bankName} will be used for auto-tracking.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Simple Explanation */}
       <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
@@ -166,13 +189,22 @@ const Goals: React.FC = () => {
         </div>
         <div className="mt-4 p-3 bg-red-900 rounded-lg border border-red-700">
           <p className="text-red-300 text-sm">
-            <strong>Auto-Tracking:</strong> Your savings progress updates automatically based on your income and expenses. The auto-tracked amount reflects your monthly savings (Income - Expenses) and updates in real-time when you add or modify transactions. This ensures your goals always show accurate progress!
+            <strong>Auto-Tracking:</strong> Your savings progress updates automatically based on your total available balance. The auto-tracked amount reflects your current bank balance (Starting Balance + Income - Expenses) and updates in real-time when you add or modify transactions. This ensures your goals always show your actual accumulated savings!
           </p>
           {selectedBankAccount && (
             <div className="mt-3 p-2 bg-gray-800 rounded border border-gray-600">
               <p className="text-red-200 text-xs">
-                <strong>Current Monthly Savings:</strong> {formatCurrency(currentMonthlySavings)}
+                <strong>Current Available Balance:</strong> {formatCurrency(currentMonthlySavings)}
               </p>
+              <button
+                onClick={() => {
+                  console.log('🎯 Manual trigger: Updating goals...');
+                  updateAllSavings();
+                }}
+                className="mt-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded"
+              >
+                Manual Update Goals
+              </button>
             </div>
           )}
         </div>
@@ -330,7 +362,7 @@ const Goals: React.FC = () => {
                       <Edit className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => deleteSavingsGoal(goal.id)}
+                      onClick={async () => await deleteSavingsGoal(goal.id)}
                       className="p-2 text-gray-400 hover:text-red-400 transition-colors duration-200"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -349,7 +381,7 @@ const Goals: React.FC = () => {
                       <p className={`text-gray-400 ${themeConfig.classes.textSecondary}`}>Auto-Tracked Savings</p>
                       <p className={`text-xl font-bold ${themeConfig.classes.text}`}>{formatCurrency(goal.autoTrackedAmount || 0)}</p>
                       <p className={`text-xs ${themeConfig.classes.textSecondary}`}>
-                        {goal.autoTrackedAmount !== undefined ? 'Monthly Savings (Income - Expenses)' : 'Not available'}
+                        {goal.autoTrackedAmount !== undefined ? 'Total Available Balance (Starting + Income - Expenses)' : 'Not available'}
                       </p>
                     </div>
                     <div>

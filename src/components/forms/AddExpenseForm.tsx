@@ -57,26 +57,18 @@ const AddExpenseForm: React.FC<AddExpenseFormProps> = ({ isOpen, onClose }) => {
   const selectedCategory = defaultExpenseCategories.find(cat => cat.id === formData.category);
   const selectedAccount = bankAccounts.find(account => account.id === formData.bankAccountId);
 
-  // Calculate monthly savings for the selected account
-  const getMonthlySavings = () => {
-    if (!selectedAccount) return 0;
-    
-    const accountIncomes = incomes.filter(income => income.bankAccountId === selectedAccount.id);
-    const accountExpenses = expenses.filter(expense => expense.bankAccountId === selectedAccount.id);
-    
-    const monthlyIncome = calculateMonthlyIncome(accountIncomes);
-    const monthlyExpenses = calculateMonthlyExpenses(accountExpenses);
-    
-    // If this is a new account with no income/expenses but has a starting balance,
-    // treat the starting balance as initial income and savings
-    if (monthlyIncome === 0 && monthlyExpenses === 0 && selectedAccount.currentBalance > 0) {
-      return selectedAccount.currentBalance;
-    }
-    
-    return monthlyIncome - monthlyExpenses;
-  };
-
-  const monthlySavings = getMonthlySavings();
+  // Calculate monthly savings using the same logic as Dashboard for consistency
+  const accountIncomes = selectedAccount ? incomes.filter(income => income.bankAccountId === selectedAccount.id) : [];
+  const accountExpenses = selectedAccount ? expenses.filter(expense => expense.bankAccountId === selectedAccount.id) : [];
+  
+  const transactionIncome = accountIncomes.reduce((sum, income) => sum + income.amount, 0);
+  const transactionExpenses = accountExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const startingBalance = selectedAccount?.startingBalance || 0;
+  
+  // Calculate total income: transaction incomes + starting balance
+  const totalIncome = transactionIncome + startingBalance;
+  // Calculate monthly savings: total income - total expenses
+  const monthlySavings = totalIncome - transactionExpenses;
   const currentBalance = selectedAccount?.currentBalance || 0;
 
   const handleAmountChange = (value: string) => {

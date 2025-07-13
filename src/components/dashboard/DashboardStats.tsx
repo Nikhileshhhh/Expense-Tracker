@@ -26,7 +26,7 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ summary }) => {
       borderColor: 'border-red-700'
     },
     {
-      title: 'Monthly Savings',
+      title: 'Overall Savings',
       value: summary.savings,
       icon: Wallet,
       color: summary.savings >= 0 ? 'text-blue-400' : 'text-red-400',

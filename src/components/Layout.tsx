@@ -16,7 +16,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageChange }) => {
   const { user, logout, refreshKey } = useAuth();
   const { getDueReminders, markAsPaid, deleteReminder } = useBillReminders();
-  const { budgets, budgetProgress, savingsGoals, expenses } = useData();
+  const { budgets, budgetProgress, savingsGoals, expenses, getBudgetNotifications } = useData();
   const { currentTheme, setTheme, themeConfig } = useTheme();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
@@ -31,9 +31,8 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageChange }) 
     setTheme(themes[nextIndex]);
   };
 
-  // Budget notifications
-  const overBudget = budgets.filter(b => (budgetProgress[b.id] ?? 0) >= 100);
-  const alertBudgets = budgets.filter(b => (budgetProgress[b.id] ?? 0) >= b.alertThreshold && (budgetProgress[b.id] ?? 0) < 100);
+  // Budget notifications with bank account information
+  const { overBudget: overBudgetData, alertBudgets: alertBudgetsData } = getBudgetNotifications();
 
   // Goal notifications
   const overdueGoals = savingsGoals.filter(g => {
@@ -42,7 +41,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageChange }) 
     return daysLeft < 0 && !achieved;
   });
 
-  const totalNotifications = dueReminders.length + overBudget.length + alertBudgets.length + overdueGoals.length;
+  const totalNotifications = dueReminders.length + overBudgetData.length + alertBudgetsData.length + overdueGoals.length;
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
@@ -61,17 +60,200 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageChange }) 
       <div className={`lg:hidden ${themeConfig.classes.container} shadow-sm border-b border-gray-700`}>
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-red-600 to-red-800 rounded-lg flex items-center justify-center">
-              <TrendingUp className="h-5 w-5 text-white" />
-            </div>
-            <h1 className={`text-xl font-bold ${themeConfig.classes.text}`}>ExpenseTracker</h1>
+            <img src={logo} alt="ExpenseTracker Logo" className="w-8 h-8" />
+            <h1 className={`text-xl font-bold ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>ExpenseTracker</h1>
           </div>
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="p-2 rounded-md text-gray-400 hover:text-gray-300 hover:bg-gray-700"
-          >
-            {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
+          <div className="flex items-center space-x-2">
+            {/* Theme Toggle Button */}
+            <button
+              onClick={cycleTheme}
+              className={`p-2 rounded-md transition-colors duration-200 ${
+                currentTheme === 'dark' 
+                  ? 'text-gray-400 hover:text-purple-400 hover:bg-gray-700'
+                  : 'text-black hover:text-purple-600 hover:bg-gray-200'
+              }`}
+              title={`Current theme: ${currentTheme}. Click to cycle themes.`}
+            >
+              <Palette className="h-6 w-6" />
+            </button>
+            {/* Notification Bell */}
+            <div className="relative">
+              {/* Overlay to block interaction with main content when dropdown is open */}
+              {showDropdown && (
+                <div
+                  className="fixed inset-0 z-40 bg-transparent"
+                  onClick={() => setShowDropdown(false)}
+                />
+              )}
+              <button
+                className={`relative focus:outline-none transition-colors duration-200
+                  ${currentTheme === 'vibrant' ? 'bg-white bg-opacity-80 border border-yellow-400 shadow-md' : ''}
+                  rounded-full p-1.5
+                `}
+                onClick={() => setShowDropdown((v) => !v)}
+                aria-label="Notifications"
+              >
+                <Bell className={`h-6 w-6 transition-colors
+                  ${currentTheme === 'dark'
+                    ? 'text-gray-300 hover:text-red-400'
+                    : currentTheme === 'vibrant'
+                      ? 'text-yellow-500 hover:text-yellow-600'
+                      : 'text-black hover:text-red-600'}
+                `} />
+                {totalNotifications > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs rounded-full px-1.5 py-0.5 font-bold animate-pulse">
+                    {totalNotifications}
+                  </span>
+                )}
+              </button>
+              {/* Mobile Notification Dropdown */}
+              {showDropdown && (
+                <div className={`absolute right-0 mt-2 w-72 sm:w-80 z-50 p-4 max-h-96 overflow-y-auto max-w-[calc(100vw-2rem)]
+                  ${currentTheme === 'vibrant'
+                    ? 'bg-white bg-opacity-95 border border-yellow-400 shadow-2xl rounded-xl'
+                    : `${themeConfig.classes.container} border border-gray-700 rounded-xl shadow-lg`}
+                `}>
+                  <h3 className={`font-semibold mb-2 text-base ${themeConfig.classes.text}`}>Notifications</h3>
+                  {/* Bill Reminders */}
+                  <div className="mb-4">
+                    <div className="flex items-center mb-1 text-red-400 font-semibold"><Bell className="h-4 w-4 mr-1" /> Bill Reminders</div>
+                    {dueReminders.length === 0 ? (
+                      <p className={`text-xs mb-2 ${themeConfig.classes.textMuted}`}>No due or overdue bill reminders.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {dueReminders.map(rem => (
+                          <div key={rem.id} className={`flex items-center justify-between ${themeConfig.classes.card} rounded-lg p-3 border border-gray-600 min-w-0`}>
+                            <div className="flex-1 min-w-0 mr-2">
+                              <p className={`font-medium text-sm ${themeConfig.classes.text} truncate`}>{rem.billName}</p>
+                              <p className={`text-xs ${themeConfig.classes.textMuted}`}>Due: {rem.dueDate}</p>
+                              {rem.notes && <p className={`text-xs ${themeConfig.classes.textMuted} italic truncate`}>{rem.notes}</p>}
+                            </div>
+                            <div className="flex flex-col space-y-1 flex-shrink-0">
+                              <button onClick={() => markAsPaid(rem.id)} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded text-xs whitespace-nowrap">Mark as Paid</button>
+                              <button onClick={() => deleteReminder(rem.id)} className="bg-gray-600 hover:bg-red-700 text-white px-2 py-0.5 rounded text-xs whitespace-nowrap">Delete</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* Budget Alerts */}
+                  <div className="mb-4">
+                    <div className="flex items-center mb-1 text-yellow-400 font-semibold">
+                      <AlertTriangle className="h-4 w-4 mr-1" /> 
+                      <span 
+                        className="cursor-pointer hover:text-yellow-300 transition-colors"
+                        onClick={() => {
+                          onPageChange('budgets');
+                          setShowDropdown(false);
+                        }}
+                      >
+                        Budget Alerts
+                      </span>
+                    </div>
+                    {overBudgetData.length === 0 && alertBudgetsData.length === 0 ? (
+                      <p className={`text-xs mb-2 ${themeConfig.classes.textMuted}`}>No budget alerts.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {overBudgetData.map(({ budget, bankAccount, progress }) => (
+                          <div 
+                            key={budget.id} 
+                            className="flex items-center justify-between bg-red-900 border border-red-700 rounded-lg p-3 cursor-pointer hover:bg-red-800 transition-colors min-w-0"
+                            onClick={() => {
+                              onPageChange('budgets');
+                              setShowDropdown(false);
+                            }}
+                          >
+                            <div className="flex items-center flex-1 min-w-0 mr-2">
+                              <Target className="h-4 w-4 text-red-400 mr-2 flex-shrink-0" />
+                              <div className="min-w-0">
+                                <span className={`text-sm font-medium ${themeConfig.classes.text} block truncate`}>{budget.category}</span>
+                                <p className={`text-xs ${themeConfig.classes.textMuted} truncate`}>
+                                  {bankAccount.bankName}
+                                  {bankAccount.nickname && bankAccount.nickname !== bankAccount.bankName && (
+                                    <span className="text-gray-500"> ({bankAccount.nickname})</span>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-red-400 text-xs font-bold flex-shrink-0">Over Budget! ({progress.toFixed(0)}%)</span>
+                          </div>
+                        ))}
+                        {alertBudgetsData.map(({ budget, bankAccount, progress }) => (
+                          <div 
+                            key={budget.id} 
+                            className="flex items-center justify-between bg-yellow-900 border border-yellow-700 rounded-lg p-3 cursor-pointer hover:bg-yellow-800 transition-colors min-w-0"
+                            onClick={() => {
+                              onPageChange('budgets');
+                              setShowDropdown(false);
+                            }}
+                          >
+                            <div className="flex items-center flex-1 min-w-0 mr-2">
+                              <Target className="h-4 w-4 text-yellow-400 mr-2 flex-shrink-0" />
+                              <div className="min-w-0">
+                                <span className={`text-sm font-medium ${themeConfig.classes.text} block truncate`}>{budget.category}</span>
+                                <p className={`text-xs ${themeConfig.classes.textMuted} truncate`}>
+                                  {bankAccount.bankName}
+                                  {bankAccount.nickname && bankAccount.nickname !== bankAccount.bankName && (
+                                    <span className="text-gray-500"> ({bankAccount.nickname})</span>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-yellow-400 text-xs font-bold flex-shrink-0">{progress.toFixed(0)}% used</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* Goal Deadlines */}
+                  <div>
+                    <div className="flex items-center mb-1 text-blue-400 font-semibold">
+                      <TrendingUp className="h-4 w-4 mr-1" /> 
+                      <span 
+                        className="cursor-pointer hover:text-blue-300 transition-colors"
+                        onClick={() => {
+                          onPageChange('goals');
+                          setShowDropdown(false);
+                        }}
+                      >
+                        Goal Deadlines
+                      </span>
+                    </div>
+                    {overdueGoals.length === 0 ? (
+                      <p className={`text-xs mb-2 ${themeConfig.classes.textMuted}`}>No overdue goals.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {overdueGoals.map(g => {
+                          const daysOverdue = Math.abs(Math.ceil((new Date(g.targetDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+                          return (
+                            <div 
+                              key={g.id} 
+                              className="flex items-center justify-between bg-blue-900 border border-blue-700 rounded-lg p-3 cursor-pointer hover:bg-blue-800 transition-colors"
+                              onClick={() => {
+                                onPageChange('goals');
+                                setShowDropdown(false);
+                              }}
+                            >
+                              <div className="flex items-center"><CheckCircle className="h-4 w-4 text-blue-400 mr-2" /><span className={`text-sm font-medium ${themeConfig.classes.text}`}>{g.title}</span></div>
+                              <span className="text-blue-400 text-xs font-bold">Overdue by {daysOverdue} days</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* Mobile Menu Button */}
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="p-2 rounded-md text-gray-400 hover:text-gray-300 hover:bg-gray-700"
+            >
+              {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -193,16 +375,28 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageChange }) 
               </button>
               
               <div className="relative">
+                {/* Overlay to block interaction with main content when dropdown is open */}
+                {showDropdown && (
+                  <div
+                    className="fixed inset-0 z-40 bg-transparent"
+                    onClick={() => setShowDropdown(false)}
+                  />
+                )}
                 <button
-                  className="relative focus:outline-none"
+                  className={`relative focus:outline-none transition-colors duration-200
+                    ${currentTheme === 'vibrant' ? 'bg-white bg-opacity-80 border border-yellow-400 shadow-md' : ''}
+                    rounded-full p-1.5
+                  `}
                   onClick={() => setShowDropdown((v) => !v)}
                   aria-label="Notifications"
                 >
-                  <Bell className={`h-6 w-6 transition-colors ${
-                    currentTheme === 'dark' 
+                  <Bell className={`h-6 w-6 transition-colors
+                    ${currentTheme === 'dark'
                       ? 'text-gray-300 hover:text-red-400'
-                      : 'text-black hover:text-red-600'
-                  }`} />
+                      : currentTheme === 'vibrant'
+                        ? 'text-yellow-500 hover:text-yellow-600'
+                        : 'text-black hover:text-red-600'}
+                  `} />
                   {totalNotifications > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs rounded-full px-1.5 py-0.5 font-bold animate-pulse">
                       {totalNotifications}
@@ -210,7 +404,11 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageChange }) 
                   )}
                 </button>
                 {showDropdown && (
-                  <div className={`absolute right-0 mt-2 w-96 ${themeConfig.classes.container} border border-gray-700 rounded-xl shadow-lg z-50 p-4`}>
+                  <div className={`absolute right-0 mt-2 w-80 sm:w-96 z-50 p-4 max-w-[calc(100vw-2rem)]
+                    ${currentTheme === 'vibrant'
+                      ? 'bg-white bg-opacity-95 border border-yellow-400 shadow-2xl rounded-xl'
+                      : `${themeConfig.classes.container} border border-gray-700 rounded-xl shadow-lg`}
+                  `}>
                     <h3 className={`font-semibold mb-2 text-base ${themeConfig.classes.text}`}>Notifications</h3>
                     {/* Bill Reminders */}
                     <div className="mb-4">
@@ -220,15 +418,15 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageChange }) 
                       ) : (
                         <div className="space-y-2">
                           {dueReminders.map(rem => (
-                            <div key={rem.id} className={`flex items-center justify-between ${themeConfig.classes.card} rounded-lg p-3 border border-gray-600`}>
-                              <div>
-                                <p className={`font-medium text-sm ${themeConfig.classes.text}`}>{rem.billName}</p>
+                            <div key={rem.id} className={`flex items-center justify-between ${themeConfig.classes.card} rounded-lg p-3 border border-gray-600 min-w-0`}>
+                              <div className="flex-1 min-w-0 mr-2">
+                                <p className={`font-medium text-sm ${themeConfig.classes.text} truncate`}>{rem.billName}</p>
                                 <p className={`text-xs ${themeConfig.classes.textMuted}`}>Due: {rem.dueDate}</p>
-                                {rem.notes && <p className={`text-xs ${themeConfig.classes.textMuted} italic`}>{rem.notes}</p>}
+                                {rem.notes && <p className={`text-xs ${themeConfig.classes.textMuted} italic truncate`}>{rem.notes}</p>}
                               </div>
-                              <div className="flex flex-col space-y-1 ml-2">
-                                <button onClick={() => markAsPaid(rem.id)} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded text-xs">Mark as Paid</button>
-                                <button onClick={() => deleteReminder(rem.id)} className="bg-gray-600 hover:bg-red-700 text-white px-2 py-0.5 rounded text-xs">Delete</button>
+                              <div className="flex flex-col space-y-1 flex-shrink-0">
+                                <button onClick={() => markAsPaid(rem.id)} className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 rounded text-xs whitespace-nowrap">Mark as Paid</button>
+                                <button onClick={() => deleteReminder(rem.id)} className="bg-gray-600 hover:bg-red-700 text-white px-2 py-0.5 rounded text-xs whitespace-nowrap">Delete</button>
                               </div>
                             </div>
                           ))}
@@ -249,34 +447,56 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onPageChange }) 
                           Budget Alerts
                         </span>
                       </div>
-                      {overBudget.length === 0 && alertBudgets.length === 0 ? (
+                      {overBudgetData.length === 0 && alertBudgetsData.length === 0 ? (
                         <p className={`text-xs mb-2 ${themeConfig.classes.textMuted}`}>No budget alerts.</p>
                       ) : (
                         <div className="space-y-2">
-                          {overBudget.map(b => (
+                          {overBudgetData.map(({ budget, bankAccount, progress }) => (
                             <div 
-                              key={b.id} 
-                              className="flex items-center justify-between bg-red-900 border border-red-700 rounded-lg p-3 cursor-pointer hover:bg-red-800 transition-colors"
+                              key={budget.id} 
+                              className="flex items-center justify-between bg-red-900 border border-red-700 rounded-lg p-3 cursor-pointer hover:bg-red-800 transition-colors min-w-0"
                               onClick={() => {
                                 onPageChange('budgets');
                                 setShowDropdown(false);
                               }}
                             >
-                              <div className="flex items-center"><Target className="h-4 w-4 text-red-400 mr-2" /><span className={`text-sm font-medium ${themeConfig.classes.text}`}>{b.category}</span></div>
-                              <span className="text-red-400 text-xs font-bold">Over Budget! ({(budgetProgress[b.id] ?? 0).toFixed(0)}%)</span>
+                              <div className="flex items-center flex-1 min-w-0 mr-2">
+                                <Target className="h-4 w-4 text-red-400 mr-2 flex-shrink-0" />
+                                <div className="min-w-0">
+                                  <span className={`text-sm font-medium ${themeConfig.classes.text} block truncate`}>{budget.category}</span>
+                                  <p className={`text-xs ${themeConfig.classes.textMuted} truncate`}>
+                                    {bankAccount.bankName}
+                                    {bankAccount.nickname && bankAccount.nickname !== bankAccount.bankName && (
+                                      <span className="text-gray-500"> ({bankAccount.nickname})</span>
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="text-red-400 text-xs font-bold flex-shrink-0">Over Budget! ({progress.toFixed(0)}%)</span>
                             </div>
                           ))}
-                          {alertBudgets.map(b => (
+                          {alertBudgetsData.map(({ budget, bankAccount, progress }) => (
                             <div 
-                              key={b.id} 
-                              className="flex items-center justify-between bg-yellow-900 border border-yellow-700 rounded-lg p-3 cursor-pointer hover:bg-yellow-800 transition-colors"
+                              key={budget.id} 
+                              className="flex items-center justify-between bg-yellow-900 border border-yellow-700 rounded-lg p-3 cursor-pointer hover:bg-yellow-800 transition-colors min-w-0"
                               onClick={() => {
                                 onPageChange('budgets');
                                 setShowDropdown(false);
                               }}
                             >
-                              <div className="flex items-center"><Target className="h-4 w-4 text-yellow-400 mr-2" /><span className={`text-sm font-medium ${themeConfig.classes.text}`}>{b.category}</span></div>
-                              <span className="text-red-400 text-xs font-bold">{(budgetProgress[b.id] ?? 0).toFixed(0)}% used</span>
+                              <div className="flex items-center flex-1 min-w-0 mr-2">
+                                <Target className="h-4 w-4 text-yellow-400 mr-2 flex-shrink-0" />
+                                <div className="min-w-0">
+                                  <span className={`text-sm font-medium ${themeConfig.classes.text} block truncate`}>{budget.category}</span>
+                                  <p className={`text-xs ${themeConfig.classes.textMuted} truncate`}>
+                                    {bankAccount.bankName}
+                                    {bankAccount.nickname && bankAccount.nickname !== bankAccount.bankName && (
+                                      <span className="text-gray-500"> ({bankAccount.nickname})</span>
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="text-yellow-400 text-xs font-bold flex-shrink-0">{progress.toFixed(0)}% used</span>
                             </div>
                           ))}
                         </div>

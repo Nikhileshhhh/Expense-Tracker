@@ -670,7 +670,7 @@ What would you like to know about your financial situation or the app?`;
 
       {/* Chat Window */}
       {isOpen && (
-        <div className="fixed bottom-6 right-6 w-96 h-[500px] bg-gray-800 border border-gray-700 rounded-xl shadow-2xl z-50 flex flex-col">
+        <div className="fixed bottom-6 right-6 w-80 sm:w-96 h-[500px] bg-gray-800 border border-gray-700 rounded-xl shadow-2xl z-50 flex flex-col max-w-[calc(100vw-2rem)]">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-700 bg-gradient-to-r from-red-600 to-red-800 rounded-t-xl">
             <div className="flex items-center space-x-2">
@@ -696,7 +696,7 @@ What would you like to know about your financial situation or the app?`;
                 className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
+                  className={`max-w-[calc(100%-1rem)] px-3 py-2 rounded-lg text-sm ${
                     message.sender === 'user'
                       ? 'bg-red-600 text-white'
                       : message.type === 'warning'

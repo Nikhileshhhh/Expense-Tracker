@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import { BillReminderProvider } from './contexts/BillReminderContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { ToastProvider } from './contexts/ToastContext';
 import LoginForm from './components/auth/LoginForm';
 import SignupForm from './components/auth/SignupForm';
 import Layout from './components/Layout';
@@ -37,8 +38,11 @@ const AuthenticatedApp: React.FC = () => {
   useEffect(() => {
     if (user && !hasShownThemeSelector) {
       const savedTheme = localStorage.getItem('user_theme');
-      if (!savedTheme) {
-        // Show theme selector for new users
+      const hasCompletedOnboarding = localStorage.getItem('user_onboarding_completed');
+      
+      // Show theme selector for new users who haven't completed onboarding
+      if (!savedTheme || !hasCompletedOnboarding) {
+        console.log('🎨 New user detected, showing theme selector');
         setShowThemeSelector(true);
       }
       setHasShownThemeSelector(true);
@@ -129,7 +133,9 @@ const App: React.FC = () => {
       <AuthProvider>
         <DataProvider>
           <BillReminderProvider>
-            <AuthenticatedApp />
+            <ToastProvider>
+              <AuthenticatedApp />
+            </ToastProvider>
           </BillReminderProvider>
         </DataProvider>
       </AuthProvider>

@@ -11,7 +11,7 @@ import { Budget, Expense } from '../types';
 
 const Budgets: React.FC = () => {
   const {
-    budgets, expenses, addBudget, updateBudget, deleteBudget, budgetProgress
+    budgets, expenses, addBudget, updateBudget, deleteBudget, budgetProgress, selectedBankAccount
   } = useData();
   const { themeConfig, currentTheme } = useTheme();
   const [showForm, setShowForm] = useState(false);
@@ -23,7 +23,7 @@ const Budgets: React.FC = () => {
     alertThreshold: 80
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.category || !formData.budgetAmount) {
@@ -33,15 +33,15 @@ const Budgets: React.FC = () => {
 
     const budgetData = {
       category: formData.category,
-      budgetAmount: parseFloat(formData.budgetAmount),
+      budgetAmount: Math.round(parseFloat(formData.budgetAmount) * 100) / 100, // Round to 2 decimal places
       period: formData.period,
       alertThreshold: formData.alertThreshold
     };
 
     if (editingBudget) {
-      updateBudget({ ...editingBudget, ...budgetData });
+      await updateBudget({ ...editingBudget, ...budgetData });
     } else {
-      addBudget(budgetData);
+      await addBudget(budgetData);
     }
 
     resetForm();
@@ -88,15 +88,38 @@ const Budgets: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className={`text-3xl font-bold ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>Budget Management</h1>
+        <div>
+          <h1 className={`text-3xl font-bold ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>Budget Management</h1>
+          {selectedBankAccount && (
+            <p className={`text-sm ${currentTheme === 'dark' ? 'text-gray-400' : 'text-gray-600'} mt-1`}>
+              Bank Account: {selectedBankAccount.nickname || selectedBankAccount.bankName}
+            </p>
+          )}
+        </div>
         <button
           onClick={() => setShowForm(true)}
-          className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg flex items-center space-x-2"
+          disabled={!selectedBankAccount}
+          className={`px-6 py-3 rounded-lg flex items-center space-x-2 transition-colors duration-200 ${
+            selectedBankAccount 
+              ? 'bg-red-600 hover:bg-red-700 text-white' 
+              : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+          }`}
         >
           <Plus className="h-5 w-5" />
           <span>Create Budget</span>
         </button>
       </div>
+
+      {!selectedBankAccount && (
+        <div className="bg-yellow-900 border border-yellow-700 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="h-5 w-5 text-yellow-400" />
+            <p className="text-yellow-200">
+              Please select a bank account to manage budgets. Each bank account has its own separate budgets.
+            </p>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-6">
@@ -180,11 +203,16 @@ const Budgets: React.FC = () => {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {budgets.length === 0 ? (
+        {budgets.filter(budget => budget.bankAccountId === selectedBankAccount?.id).length === 0 ? (
           <div className={`col-span-full text-center ${currentTheme === 'dark' ? 'text-white' : 'text-black'}`}>No Budgets Found</div>
         ) : (
-          budgets.map((budget) => {
-            const periodExpenses = getPeriodExpenses(expenses, budget.period);
+          budgets.filter(budget => budget.bankAccountId === selectedBankAccount?.id).map((budget) => {
+            // Filter expenses by selected bank account
+            const accountExpenses = selectedBankAccount 
+              ? expenses.filter(e => e.bankAccountId === selectedBankAccount.id)
+              : expenses;
+            
+            const periodExpenses = getPeriodExpenses(accountExpenses, budget.period);
             const spent = periodExpenses
               .filter(e => e.category === budget.category)
               .reduce((sum, e) => sum + e.amount, 0);
@@ -202,7 +230,7 @@ const Budgets: React.FC = () => {
                     <button onClick={() => handleEdit(budget)}>
                       <Edit className="h-4 w-4 text-gray-400 hover:text-white" />
                     </button>
-                    <button onClick={() => deleteBudget(budget.id)}>
+                    <button onClick={async () => await deleteBudget(budget.id)}>
                       <Trash2 className="h-4 w-4 text-gray-400 hover:text-white" />
                     </button>
                   </div>
