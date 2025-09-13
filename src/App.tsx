@@ -4,6 +4,7 @@ import { DataProvider } from './contexts/DataContext';
 import { BillReminderProvider } from './contexts/BillReminderContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
+import PublicLanding from './pages/PublicLanding';
 import LoginForm from './components/auth/LoginForm';
 import SignupForm from './components/auth/SignupForm';
 import Layout from './components/Layout';
@@ -59,21 +60,32 @@ const AuthenticatedApp: React.FC = () => {
 
   if (!user) {
     return (
-      <div className="relative min-h-screen flex flex-col items-center justify-center p-4">
-        <SlideshowBackground />
-        <div className="relative z-10 w-full max-w-md">
-          <BrowserRouter>
-            <Routes>
-              <Route path="/signup" element={<SignupRequest />} />
-              <Route path="/verify" element={<VerifyEmail />} />
-              <Route path="/create-password" element={<CreatePassword />} />
-              <Route path="/complete-profile" element={<CompleteProfile />} />
-              <Route path="/*" element={<Login />} />
-            </Routes>
-          </BrowserRouter>
-        </div>
-        <Footer />
-      </div>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={
+            <div className="relative min-h-screen flex flex-col items-center justify-center p-4">
+              <SlideshowBackground />
+              <div className="relative z-10 w-full max-w-md">
+                <Login />
+              </div>
+              <Footer />
+            </div>
+          } />
+          <Route path="/signup" element={
+            <div className="relative min-h-screen flex flex-col items-center justify-center p-4">
+              <SlideshowBackground />
+              <div className="relative z-10 w-full max-w-md">
+                <SignupRequest />
+              </div>
+              <Footer />
+            </div>
+          } />
+          <Route path="/verify" element={<VerifyEmail />} />
+          <Route path="/create-password" element={<CreatePassword />} />
+          <Route path="/complete-profile" element={<CompleteProfile />} />
+          <Route path="/*" element={<PublicLanding />} />
+        </Routes>
+      </BrowserRouter>
     );
   }
 

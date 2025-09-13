@@ -15,6 +15,7 @@
     "chartjs-adapter-date-fns": "^3.0.0",
     "date-fns": "^3.6.0",
     "firebase": "^11.9.1",
+    "framer-motion": "^12.23.12",
     "googleapis": "^105.0.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^2.5.1",
@@ -36,10 +37,10 @@
     "eslint-plugin-react-refresh": "^0.4.11",
     "globals": "^15.9.0",
     "postcss": "^8.4.35",
+    "rollup": "3.29.4",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.3.0",
-    "vite": "^4.5.0",
-    "rollup": "3.29.4"
+    "vite": "^4.5.0"
   }
 }
